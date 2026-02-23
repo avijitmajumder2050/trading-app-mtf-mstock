@@ -49,6 +49,7 @@ cd "$APP_HOME"
 REPO_NAME=$(basename "$REPO_URL" .git)
 if [ ! -d "$REPO_NAME" ]; then
   git clone "$REPO_URL"
+  chown -R $APP_USER:$APP_USER $APP_HOME/$REPO_NAME
 fi
 
 cd "$REPO_NAME"

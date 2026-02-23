@@ -3,7 +3,7 @@ import logging
 
 # ── Config ──
 REGION = "ap-south-1"
-SSM_PARAM_NAME = "/trading-bot-scanner/ec2/launch_template_id"
+SSM_PARAM_NAME = "/trading-app-mtf/ec2/launch_template_id"
 
 ec2 = boto3.client("ec2", region_name=REGION)
 ssm = boto3.client("ssm", region_name=REGION)
