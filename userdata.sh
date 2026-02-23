@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
 
-LOGSCANNER=/var/log/trading-bot-scanner-eod.log
-LOG=/var/log/trading-bot-scanner-bootstrap.log
+LOGSCANNER=/var/log/trading-app-mtf-mstock.log
+LOG=/var/log/trading-app-mtf-mstock-bootstrap.log
 exec > >(tee -a $LOG) 2>&1
 
-echo "🚀 Bootstrapping Trading Bot scanner EC2"
+echo "🚀 Bootstrapping Trading app mstock MTF EC2"
 
 REGION="ap-south-1"
-SSM_REPO_PARAM="/trading-bot-scanner/github_repo"
+SSM_REPO_PARAM="/trading-app-mtf/github_repo"
 APP_USER="ec2-user"
 APP_HOME="/home/ec2-user"
 
@@ -84,32 +84,32 @@ grep -q "export PYTHONPATH=" /home/$APP_USER/.bashrc || \
   echo "export PYTHONPATH=$PWD" >> /home/$APP_USER/.bashrc
 
 # -----------------------------
-# Upload ONLY /var/log/trading-bot-scanner-eod.log to S3
+# Upload ONLY /var/log/trading-app-mtf-mstock.log to S3
 # -----------------------------
-sudo tee /usr/local/bin/upload-trading-bot-scanner-log.sh > /dev/null <<EOF
+sudo tee /usr/local/bin/upload-trading-app-mtf-log.sh > /dev/null <<EOF
 #!/bin/bash
 aws s3 cp $LOGSCANNER \
-  $S3_BUCKET/$S3_PREFIX/logs/trading-bot-scanner-eod.log \
+  $S3_BUCKET/$S3_PREFIX/logs/trading-app-mtf-mstock.log \
   --region $REGION || true
 EOF
-sudo chmod +x /usr/local/bin/upload-trading-bot-scanner-log.sh
+sudo chmod +x /usr/local/bin/upload-trading-app-mtf-log.sh
 
 # -----------------------------
 # systemd uploader service
 # -----------------------------
-sudo tee /etc/systemd/system/trading-bot-scanner-log-upload.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/trading-app-mtf-log-upload.service > /dev/null <<EOF
 [Unit]
 Description=Upload trading-bot-scanner.log to S3
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/upload-trading-bot-scanner-log.sh 
+ExecStart=/usr/local/bin/upload-trading-app-mtf-log.sh
 EOF
 
 # -----------------------------
 # systemd uploader timer (5 min)
 # -----------------------------
-sudo tee /etc/systemd/system/trading-bot-scanner-log-upload.timer > /dev/null <<EOF
+sudo tee /etc/systemd/system/trading-app-mtf-log-upload.timer > /dev/null <<EOF
 [Unit]
 Description=Upload trading-bot-scanner.log to S3 every 5 minutes
 
@@ -125,9 +125,9 @@ EOF
 # -----------------------------
 # Trading bot scanner service
 # -----------------------------
-sudo tee /etc/systemd/system/trading-bot-scanner.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/trading-app-mtf.service > /dev/null <<EOF
 [Unit]
-Description=Trading Bot scanner Service
+Description=Trading app scanner Service
 After=network-online.target
 Wants=network-online.target
 
@@ -141,7 +141,7 @@ Restart=always
 RestartSec=10
 StandardOutput=append:$LOGSCANNER
 StandardError=append:$LOGSCANNER
-ExecStopPost= /usr/local/bin/upload-trading-bot-scanner-log.sh
+ExecStopPost= /usr/local/bin/upload-trading-app-mtf-log.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -151,8 +151,8 @@ EOF
 # Enable & start
 # -----------------------------
 sudo systemctl daemon-reload
-sudo systemctl enable trading-bot-scanner
-sudo systemctl enable --now trading-bot-scanner-log-upload.timer
-sudo systemctl restart trading-bot-scanner
+sudo systemctl enable trading-app-mtf
+sudo systemctl enable --now trading-app-mtf-log-upload.timer
+sudo systemctl restart trading-app-mtf
 
-echo "✅ Trading Bot scanner started; /var/log/trading-bot-scanner-eod.log uploads to S3 only"
+echo "✅ Trading Bot scanner started; /var/log/trading-app-mtf-mstock.log uploads to S3 only"
