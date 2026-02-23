@@ -1,0 +1,9 @@
+python-telegram-bot
+boto3
+pandas
+pytz
+requests
+nest_asyncio
+mStock-TradingApi-A
+
+
