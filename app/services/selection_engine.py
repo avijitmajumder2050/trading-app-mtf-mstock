@@ -97,11 +97,11 @@ def select_and_rank_stocks(interval="5minute"):
         first_candle_low = float(intraday_df.iloc[0]["low"])
         first_candle_high = float(intraday_df.iloc[0]["high"])
         # Previous fully closed candle
-        previous_candle_high = float(intraday_df.iloc[-2]["high"])
+        previous_candle_high = float(intraday_df.iloc[-2]["close"])
 
         logger.info(
-            "%s | FirstHigh: %.2f | FirstLow: %.2f",
-            stock_name, first_candle_high, first_candle_low
+            "%s | FirstHigh: %.2f | FirstLow: %.2f | PrevClose: %.2f",
+            stock_name, first_candle_high, first_candle_low,previous_candle_high
         )
 
         # Break first candle high
