@@ -55,7 +55,7 @@ def execute_mtf_entry(trade: dict):
 
     entry_payload = {
         "_variety": "REGULAR",
-        "_tradingsymbol": trade["stock_name"],
+        "_tradingsymbol": f"{trade['stock_name']}-EQ",
         "_exchange": "NSE",
         "_transaction_type": "BUY",
         "_order_type": "MARKET",
@@ -115,7 +115,7 @@ def exit_full_position(trade: dict, reason="MANUAL_EXIT"):
 
     exit_payload = {
         "_variety": "REGULAR",
-        "_tradingsymbol": trade["stock_name"],
+        "_tradingsymbol": f"{trade['stock_name']}-EQ",
         "_exchange": "NSE",
         "_transaction_type": "SELL",
         "_order_type": "MARKET",
@@ -167,7 +167,7 @@ def exit_partial_position(trade: dict, qty_to_exit: int):
 
     exit_payload = {
         "_variety": "REGULAR",
-        "_tradingsymbol": trade["stock_name"],
+        "_tradingsymbol": f"{trade['stock_name']}-EQ",
         "_exchange": "NSE",
         "_transaction_type": "SELL",
         "_order_type": "MARKET",

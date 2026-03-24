@@ -24,7 +24,7 @@ def select_and_rank_stocks(interval="5minute"):
     # --------------------------------
     # 1️⃣ Build symbol list
     # --------------------------------
-    symbols = [f"NSE:{name}-EQ" for name in df["Stock Name"].tolist()]
+    symbols = [f"NSE:{name}" for name in df["Stock Name"].tolist()]
     logger.info("Fetching LTP for %d stocks", len(symbols))
 
     live_data = get_mstock_ltp(symbols)
@@ -44,7 +44,7 @@ def select_and_rank_stocks(interval="5minute"):
         sec_id = str(row["Security ID"])
         scan_high = float(row["High"])
 
-        symbol_key = f"NSE:{stock_name}-EQ"
+        symbol_key = f"NSE:{stock_name}"
         ltp_data = live_data.get(symbol_key)
 
         if not ltp_data:

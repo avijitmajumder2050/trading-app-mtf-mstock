@@ -1,11 +1,7 @@
 import logging
 from datetime import datetime
 from app.config.mstock_auth import get_mstock_client
-from app.services.order_executor import (
-    place_order_with_logging,
-    cancel_order
-)
-
+from app.services.mstock_order_executor import place_order_with_logging, cancel_order
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -18,7 +14,7 @@ def manage_active_trades(active_trades_df):
 
     mstock = get_mstock_client()
 
-    symbols = [f"NSE:{row['stock_name']}" for _, row in active_trades_df.iterrows()]
+    symbols = [f"NSE:{row['stock_name']}-EQ" for _, row in active_trades_df.iterrows()]
     ltp_response = mstock.get_ltp(symbols)
     ltp_data = ltp_response.json()["data"]
 
@@ -27,7 +23,8 @@ def manage_active_trades(active_trades_df):
     for _, trade in active_trades_df.iterrows():
 
         stock = trade["stock_name"]
-        ltp = float(ltp_data[f"NSE:{stock}"]["last_price"])
+        
+        ltp = float(ltp_data.get(f"NSE:{stock}-EQ", {}).get("last_price", 0))
 
         entry = float(trade["entry_price"])
         current_sl = float(trade["current_sl"])
@@ -47,7 +44,7 @@ def manage_active_trades(active_trades_df):
 
             exit_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": stock,
+                "_tradingsymbol": f"{stock}-EQ",
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "MARKET",
@@ -80,7 +77,7 @@ def manage_active_trades(active_trades_df):
             # Partial Sell
             partial_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": stock,
+                "_tradingsymbol": f"{stock}-EQ",
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "MARKET",
@@ -102,7 +99,7 @@ def manage_active_trades(active_trades_df):
 
             new_sl_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": stock,
+                "_tradingsymbol": f"{stock}-EQ",
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "SL-M",
@@ -146,7 +143,7 @@ def manage_active_trades(active_trades_df):
 
             trail_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": stock,
+                "_tradingsymbol": f"{stock}-EQ",
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "SL-M",
@@ -178,7 +175,7 @@ def manage_active_trades(active_trades_df):
 
             exit_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": stock,
+                "_tradingsymbol": f"{stock}-EQ",
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "MARKET",

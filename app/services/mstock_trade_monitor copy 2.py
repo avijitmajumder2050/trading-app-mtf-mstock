@@ -23,8 +23,7 @@ def monitor_trades():
         return
 
     stock_list = active_df["stock_name"].dropna().unique().tolist()
-    #symbols = [f"NSE:{name}" for name in stock_list]
-    symbols = [f"NSE:{name}-EQ" for name in stock_list]
+    symbols = [f"NSE:{name}" for name in stock_list]
 
     live_data = get_mstock_ltp(symbols)
 
@@ -42,7 +41,7 @@ def monitor_trades():
             continue
 
         stock = trade["stock_name"]
-        symbol = f"NSE:{stock}-EQ"
+        symbol = f"NSE:{stock}"
 
         ltp_data = live_data.get(symbol)
         if not ltp_data:
@@ -61,7 +60,7 @@ def monitor_trades():
             if is_market_close:
                 exit_payload = {
                     "_variety": "REGULAR",
-                    "_tradingsymbol": f"{stock}-EQ",
+                    "_tradingsymbol": stock,
                     "_exchange": "NSE",
                     "_transaction_type": "SELL",
                     "_order_type": "MARKET",
@@ -109,7 +108,7 @@ def monitor_trades():
             partial_qty = max(1, trade["remaining_qty"] // 2)
             exit_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": f"{stock}-EQ",
+                "_tradingsymbol": stock,
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "MARKET",
@@ -153,7 +152,7 @@ def monitor_trades():
 
             exit_payload = {
                 "_variety": "REGULAR",
-                "_tradingsymbol": f"{stock}-EQ",
+                "_tradingsymbol": stock,
                 "_exchange": "NSE",
                 "_transaction_type": "SELL",
                 "_order_type": "MARKET",
