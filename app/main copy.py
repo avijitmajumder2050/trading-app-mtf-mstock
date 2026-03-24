@@ -13,7 +13,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-ENTRY_START = dt_time(22, 31)
+ENTRY_START = dt_time(9, 31)
 ENTRY_END = dt_time(11, 0)
 EVENING_TIME = dt_time(16, 0)
 
