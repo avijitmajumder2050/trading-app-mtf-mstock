@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ENTRY_START = dt_time(9, 31)
-ENTRY_END = dt_time(23, 0)
+ENTRY_END = dt_time(23, 25)
 EVENING_TIME = dt_time(23, 30)
 
 
