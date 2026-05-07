@@ -1,10 +1,8 @@
 # app/services/mstock_intraday_chart.py
-
 import logging
 from app.config.mstock_auth import get_mstock_client
 
 logger = logging.getLogger(__name__)
-
 
 def get_mstock_ltp(symbols):
     """
@@ -28,9 +26,9 @@ def get_mstock_ltp(symbols):
 
             try:
 
-                # --------------------------------
-                # Try original symbol
-                # --------------------------------
+                # -------------------------
+                # Try EQ first
+                # -------------------------
                 response = mconnect.get_ltp([symbol])
 
                 data = response.json()
@@ -43,16 +41,15 @@ def get_mstock_ltp(symbols):
 
                     continue
 
-                # --------------------------------
-                # If API returns empty data
+                # -------------------------
                 # Try BE fallback
-                # --------------------------------
+                # -------------------------
                 if symbol.endswith("-EQ"):
 
                     be_symbol = symbol.replace("-EQ", "-BE")
 
                     logger.warning(
-                        f"{symbol} invalid. Trying {be_symbol}"
+                        f"{symbol} failed. Trying {be_symbol}"
                     )
 
                     response = mconnect.get_ltp([be_symbol])
@@ -73,20 +70,14 @@ def get_mstock_ltp(symbols):
 
             except Exception as inner_e:
 
-                recovered = False
-
-                # --------------------------------
-                # Exception fallback EQ -> BE
-                # --------------------------------
+                # fallback to BE on invalid symbol
                 if symbol.endswith("-EQ"):
 
                     try:
 
                         be_symbol = symbol.replace("-EQ", "-BE")
 
-                        logger.warning(
-                            f"{symbol} invalid. Trying {be_symbol}"
-                        )
+                        
 
                         response = mconnect.get_ltp([be_symbol])
 
@@ -100,8 +91,6 @@ def get_mstock_ltp(symbols):
                                 f"LTP success with BE: {be_symbol}"
                             )
 
-                            recovered = True
-
                             continue
 
                     except Exception as be_error:
@@ -110,14 +99,9 @@ def get_mstock_ltp(symbols):
                             f"BE fallback failed for {symbol}: {be_error}"
                         )
 
-                # --------------------------------
-                # Only print error if not recovered
-                # --------------------------------
-                if not recovered:
-
-                    logger.error(
-                        f"Error fetching LTP for {symbol}: {inner_e}"
-                    )
+                logger.error(
+                    f"Error fetching LTP for {symbol}: {inner_e}"
+                )
 
         return final_data
 
