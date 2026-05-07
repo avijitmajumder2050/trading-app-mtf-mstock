@@ -45,9 +45,7 @@ def select_and_rank_stocks(interval="5minute"):
         scan_high = float(row["High"])
 
         symbol_key = f"NSE:{stock_name}-EQ"
-        eq_key = f"NSE:{stock_name}-EQ"
-        be_key = f"NSE:{stock_name}-BE"
-        ltp_data = live_data.get(eq_key) or live_data.get(be_key)
+        ltp_data = live_data.get(symbol_key)
 
         if not ltp_data:
             logger.info("%s → No LTP data", stock_name)
