@@ -5,8 +5,11 @@ from datetime import datetime
 
 from app.services.mstock_s3_reader import read_ema_momentum_from_s3
 from app.services.mstock_intraday_chart import get_intraday_chart_csv
-from app.config.settings import S3_BUCKET
 from app.config.aws_s3 import s3
+from app.config.aws_s3 import (
+    S3_BUCKET,
+    upload_csv_to_s3,
+)
 
 logger = logging.getLogger(__name__)
 

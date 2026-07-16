@@ -14,8 +14,8 @@ logger.setLevel(logging.INFO)
 # --------------------------------------------------
 # S3 Config
 # --------------------------------------------------
+from app.config.aws_s3 import S3_BUCKET
 
-BUCKET = "dhan-trading-data"
 KEY = "uploads/active_trades.csv"
 
 s3 = boto3.client("s3")
@@ -27,9 +27,9 @@ s3 = boto3.client("s3")
 
 def load_trades():
     try:
-        logger.info("Loading trades from S3 -> %s/%s", BUCKET, KEY)
+        logger.info("Loading trades from S3 -> %s/%s", S3_BUCKET, KEY)
 
-        obj = s3.get_object(Bucket=BUCKET, Key=KEY)
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=KEY)
         df = pd.read_csv(obj["Body"])
 
         logger.info("Loaded %s trades", len(df))
@@ -58,7 +58,7 @@ def save_trades(df):
         df.to_csv(csv_buffer, index=False)
 
         s3.put_object(
-            Bucket=BUCKET,
+            Bucket=S3_BUCKET,
             Key=KEY,
             Body=csv_buffer.getvalue()
         )

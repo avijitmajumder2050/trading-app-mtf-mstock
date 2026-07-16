@@ -2,8 +2,8 @@
 import logging
 import pandas as pd
 import io
-from app.config.settings import  EMA_MOMENTUM_FILE_KEY
-from app.config.aws_s3 import s3 ,S3_BUCKET
+from app.config.settings import S3_BUCKET, EMA_MOMENTUM_FILE_KEY
+from app.config.aws_s3 import s3
 
 logger = logging.getLogger(__name__)
 

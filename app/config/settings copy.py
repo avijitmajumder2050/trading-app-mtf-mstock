@@ -3,39 +3,27 @@
 import os
 from pytz import timezone
 from datetime import time
-
 from app.config.aws_ssm import get_param
-from app.config.aws_s3 import S3_BUCKET   # Import detected bucket
 
 # --- Timezone ---
 IST = timezone("Asia/Kolkata")
 
 # --- Scan Times ---
-INSIDEBAR_SCAN_TIME = time(9, 31)
+INSIDEBAR_SCAN_TIME = time(9, 31)  # 9:31 AM
 
 # --- AWS Config ---
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-
-# Bucket comes from aws_s3.py
-# S3_BUCKET = auto detected
-
-# S3 object keys
+S3_BUCKET = os.getenv("S3_BUCKET", "dhan-trading-data")
 MAP_FILE_KEY = "uploads/mapping.csv"
-NIFTYMAP_FILE_KEY = "uploads/nifty_mapping.csv"
-
-CANDLE_FILE_KEY = "uploads/inside_bar_15min_data_RS80.csv"
-FILTERED_FILE_KEY = "uploads/inside_bar_15min_RS80.csv"
-
-EOD_DATA_PREFIX = "eod_data"
-
+NIFTYMAP_FILE_KEY="uploads/nifty_mapping.csv"
+# S3 keys
+CANDLE_FILE_KEY = "uploads/inside_bar_15min_data_RS80.csv"   # 15-min candle CSV in S3
+FILTERED_FILE_KEY = "uploads/inside_bar_15min_RS80.csv"  # optional filtered output
+EOD_DATA_PREFIX = "eod_data"   # 👈 folder in S3
 # Uploads folder
 S3_UPLOADS_PREFIX = "uploads"
-
-# Files
+# EMA Momentum file
 EMA_MOMENTUM_FILE_KEY = f"{S3_UPLOADS_PREFIX}/ema_momentum_EOD.csv"
-NIFTY_BREAKOUT_FILE_KEY = f"{S3_UPLOADS_PREFIX}/nifty_15m_breakout_signals.csv"
-FYERS_BREAKOUT_FILE_KEY = f"{S3_UPLOADS_PREFIX}/fyer_insiderbar_brekout.csv"
-TRADE_JOURNAL_FILE_KEY = f"{S3_UPLOADS_PREFIX}/fyers_trade_journal.csv"
 
 # --- Logs ---
 LOG_DIR = "logs"
