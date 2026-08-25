@@ -13,6 +13,27 @@ IST = timezone("Asia/Kolkata")
 # --- Scan Times ---
 INSIDEBAR_SCAN_TIME = time(9, 31)
 
+# --- Trading Window (FROM SSM, no redeploy needed to change) ---
+def _parse_time(value: str, fallback: time) -> time:
+    try:
+        h, m = value.strip().split(":")
+        return time(int(h), int(m))
+    except Exception:
+        return fallback
+
+ENTRY_START = _parse_time(
+    get_param("/trading-app-mtf/schedule/entry_start", decrypt=False, default="09:31"),
+    time(9, 31),
+)
+ENTRY_END = _parse_time(
+    get_param("/trading-app-mtf/schedule/entry_end", decrypt=False, default="11:25"),
+    time(11, 25),
+)
+EVENING_TIME = _parse_time(
+    get_param("/trading-app-mtf/schedule/evening_time", decrypt=False, default="16:30"),
+    time(16, 30),
+)
+
 # --- AWS Config ---
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 

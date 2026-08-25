@@ -1,7 +1,7 @@
 import time
 import logging
 import asyncio
-from datetime import datetime, time as dt_time
+from datetime import datetime
 
 # Configure logging before importing any app modules — several of them log at
 # import time, and logging.basicConfig() is a no-op once handlers exist.
@@ -14,12 +14,9 @@ logging.basicConfig(
 from app.services.trade_orchestrator import run_entry_engine
 from app.services.mstock_trade_monitor import monitor_trades
 from app.bot.scheduler import terminate_after_delay   # adjust path if needed
+from app.config.settings import ENTRY_START, ENTRY_END, EVENING_TIME
 
 logger = logging.getLogger(__name__)
-
-ENTRY_START = dt_time(9, 31)
-ENTRY_END = dt_time(11, 25)
-EVENING_TIME = dt_time(16, 30)
 
 
 async def main():
