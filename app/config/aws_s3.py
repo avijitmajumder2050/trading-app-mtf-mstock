@@ -7,6 +7,8 @@ import os
 import logging
 from botocore.exceptions import ClientError
 
+logger = logging.getLogger(__name__)
+
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 
 # Bucket names to try
@@ -26,7 +28,7 @@ def get_working_bucket():
     for bucket in dict.fromkeys(BUCKET_CANDIDATES):  # remove duplicates
         try:
             s3.head_bucket(Bucket=bucket)
-            logging.info(f"✅ Using S3 bucket: {bucket}")
+            logger.info(f"✅ Using S3 bucket: {bucket}")
             return bucket
         except ClientError:
             continue
@@ -48,11 +50,11 @@ def read_csv_from_s3(bucket=None, key="") -> pd.DataFrame:
         return pd.read_csv(io.BytesIO(obj["Body"].read()))
 
     except s3.exceptions.NoSuchKey:
-        logging.error(f"❌ S3 key not found: s3://{bucket}/{key}")
+        logger.error(f"❌ S3 key not found: s3://{bucket}/{key}")
         return pd.DataFrame()
 
     except Exception as e:
-        logging.error(f"❌ Error reading CSV: {e}")
+        logger.error(f"❌ Error reading CSV: {e}")
         return pd.DataFrame()
 
 
@@ -61,7 +63,7 @@ def upload_csv_to_s3(df, bucket=None, key=""):
 
     try:
         if df is None or df.empty:
-            logging.warning(f"⚠️ Empty dataframe. Skip upload: {key}")
+            logger.warning(f"⚠️ Empty dataframe. Skip upload: {key}")
             return
 
         csv_buffer = io.StringIO()
@@ -74,10 +76,10 @@ def upload_csv_to_s3(df, bucket=None, key=""):
             ContentType="text/csv"
         )
 
-        logging.info(f"✅ Uploaded to s3://{bucket}/{key}")
+        logger.info(f"✅ Uploaded to s3://{bucket}/{key}")
 
     except Exception as e:
-        logging.error(f"❌ Upload failed: {e}")
+        logger.error(f"❌ Upload failed: {e}")
 
 
 def list_s3_files(bucket=None, prefix=""):
@@ -98,5 +100,5 @@ def list_s3_files(bucket=None, prefix=""):
         return keys
 
     except Exception as e:
-        logging.error(f"❌ Error listing S3 files: {e}")
+        logger.error(f"❌ Error listing S3 files: {e}")
         return []

@@ -2,14 +2,18 @@ import time
 import logging
 import asyncio
 from datetime import datetime, time as dt_time
+
+# Configure logging before importing any app modules — several of them log at
+# import time, and logging.basicConfig() is a no-op once handlers exist.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    force=True,
+)
+
 from app.services.trade_orchestrator import run_entry_engine
 from app.services.mstock_trade_monitor import monitor_trades
 from app.bot.scheduler import terminate_after_delay   # adjust path if needed
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
 
 logger = logging.getLogger(__name__)
 
