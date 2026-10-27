@@ -13,6 +13,7 @@ logging.basicConfig(
 
 from app.services.trade_orchestrator import run_entry_engine
 from app.services.mstock_trade_monitor import monitor_trades
+from app.services.mstock_reconcile import reconcile_positions
 from app.bot.scheduler import terminate_after_delay   # adjust path if needed
 from app.config.settings import ENTRY_START, ENTRY_END, EVENING_TIME
 
@@ -43,6 +44,9 @@ async def main():
                 logger.error("Error: %s", str(e))
 
             time.sleep(60)
+
+        # Morning only: by now last evening's SL-exit AMOs have filled at open
+        reconcile_positions()
 
         logger.info("11:00 reached. Scheduling EC2 termination (2–5 min delay)...")
         await terminate_after_delay(5)

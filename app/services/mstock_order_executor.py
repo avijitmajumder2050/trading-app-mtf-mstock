@@ -1,4 +1,5 @@
 import logging
+import time
 from app.config.mstock_auth import get_mstock_client
 from app.services.mstock_trade_store import append_trade_row, update_trade_row
 from datetime import datetime
@@ -48,6 +49,79 @@ def place_order_with_logging(payload: dict):
 
 
 # ==========================================================
+# Order Confirmation (placement success != fill; RMS can
+# reject an accepted order, e.g. "MTF NOT ALLOWED")
+# ==========================================================
+
+FILLED_STATUSES = {"traded", "complete", "completed"}
+DEAD_STATUSES = {"rejected", "cancelled", "canceled"}
+
+
+def get_order_fill(order_id, wait_seconds=15, poll_seconds=3):
+    """
+    Returns {"status", "filled_qty", "avg_price", "message"} or None if
+    order details could not be fetched. Polls while the order is pending.
+    """
+    mstock = get_mstock_client()
+    deadline = time.time() + wait_seconds
+    fill = None
+
+    while True:
+        try:
+            data = mstock.get_order_details(str(order_id)).json()
+            rows = data.get("data") or []
+            if isinstance(rows, dict):
+                rows = [rows]
+            if rows:
+                best = max(rows, key=lambda r: float(r.get("filled_quantity") or 0))
+                fill = {
+                    "status": str(rows[0].get("status", "")).lower(),
+                    "filled_qty": int(float(best.get("filled_quantity") or 0)),
+                    "avg_price": float(best.get("average_price") or 0),
+                    "message": rows[0].get("status_message", ""),
+                }
+        except Exception:
+            logger.exception("Failed to fetch order details for %s", order_id)
+
+        if fill and fill["status"] in FILLED_STATUSES | DEAD_STATUSES:
+            break
+        if time.time() >= deadline:
+            break
+        time.sleep(poll_seconds)
+
+    logger.info("ORDER FILL %s -> %s", order_id, fill)
+    return fill
+
+
+def place_order_confirmed(payload: dict):
+    """
+    Places an order and checks its final status.
+
+    Returns None if the order was not placed or was rejected/cancelled.
+    Otherwise returns {"order_id", "filled_qty", "avg_price", "pending"}.
+    "pending" means the order is live but not yet filled (e.g. an AMO
+    placed after market close) — the caller should treat it as sent.
+    """
+    order_id = place_order_with_logging(payload)
+    if not order_id:
+        return None
+
+    fill = get_order_fill(order_id)
+
+    if fill and fill["status"] in DEAD_STATUSES:
+        logger.error("Order %s %s -> %s", order_id, fill["status"], fill["message"])
+        return None
+
+    filled = fill is not None and fill["status"] in FILLED_STATUSES and fill["filled_qty"] > 0
+    return {
+        "order_id": order_id,
+        "filled_qty": fill["filled_qty"] if filled else 0,
+        "avg_price": fill["avg_price"] if filled else None,
+        "pending": not filled,
+    }
+
+
+# ==========================================================
 # ENTRY (MTF - NO BROKER SL)
 # ==========================================================
 
@@ -68,11 +142,17 @@ def execute_mtf_entry(trade: dict):
         "_tag": "MTF_ENTRY"
     }
 
-    entry_order_id = place_order_with_logging(entry_payload)
+    entry = place_order_confirmed(entry_payload)
 
-    if not entry_order_id:
+    if not entry:
         logger.error("Entry failed")
         return None
+
+    entry_order_id = entry["order_id"]
+
+    # Track the quantity actually bought (partial fills)
+    if entry["filled_qty"]:
+        trade["qty"] = entry["filled_qty"]
 
     # Save new trade (ONLY place where append is used)
     trade_row = {
