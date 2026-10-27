@@ -54,7 +54,7 @@ def place_order_with_logging(payload: dict):
 # ==========================================================
 
 FILLED_STATUSES = {"traded", "complete", "completed"}
-DEAD_STATUSES = {"rejected", "cancelled", "canceled"}
+DEAD_STATUSES = {"rejected", "cancelled", "canceled", "expired", "lapsed"}
 
 
 def get_order_fill(order_id, wait_seconds=15, poll_seconds=3):
