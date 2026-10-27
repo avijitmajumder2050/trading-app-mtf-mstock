@@ -34,12 +34,17 @@ def reconcile_positions():
     """
     Compare broker MTF positions with ACTIVE trades in active_trades.csv
     and alert on Telegram when they differ. Alert only — places no orders.
+    Never raises: main.py must still reach EC2 termination.
     """
     try:
-        broker = get_broker_mtf_positions()
+        _reconcile()
     except Exception:
-        logger.exception("Reconciliation skipped: could not fetch broker positions")
-        return
+        logger.exception("Reconciliation failed")
+        mstock_send_telegram_message("⚠️ <b>RECONCILIATION FAILED</b>\n\nCheck broker positions manually.")
+
+
+def _reconcile():
+    broker = get_broker_mtf_positions()
 
     df = load_trades()
     tracked = defaultdict(int)
