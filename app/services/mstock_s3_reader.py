@@ -20,10 +20,20 @@ def read_ema_momentum_from_s3() -> pd.DataFrame:
         )
 
         df = pd.read_csv(io.BytesIO(obj["Body"].read()))
+        df.columns = df.columns.str.strip()
 
         logger.info(
             f"Loaded EMA momentum file. Rows: {len(df)}"
         )
+
+        # File accumulates several scan days; a setup is valid only for
+        # the session after its scan, so keep the latest scan date only
+        if "Scan Time" in df.columns:
+            scan_date = pd.to_datetime(df["Scan Time"], errors="coerce").dt.date
+            latest = scan_date.max()
+            if pd.notna(latest):
+                df = df[scan_date == latest].reset_index(drop=True)
+                logger.info(f"Using scan date {latest}. Rows: {len(df)}")
 
         return df
 

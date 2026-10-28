@@ -171,30 +171,18 @@ def _process_trade(trade, live_data, is_market_close):
         return trade
 
     # ------------------------------
-    # T1 partial booking
+    # T1: move SL to breakeven only (no partial sell — each extra
+    # sell order adds DP charges; full qty exits at T2 or SL)
     # ------------------------------
     if not trade["t1_hit"] and ltp >= trade["target1"]:
-        partial_qty = trade["remaining_qty"] // 2
-        booked = 0
-
-        # Single share: nothing to split, keep it running to T2
-        if partial_qty > 0:
-            result = _sell(stock, partial_qty, "T1_PARTIAL")
-            if not result:
-                return trade
-            booked = result["filled_qty"] or partial_qty
-            trade["remaining_qty"] = max(0, trade["remaining_qty"] - booked)
-            trade["t1_exit_price"] = result["avg_price"] or ltp
-
         trade["t1_hit"] = True
         trade["current_sl"] = trade["entry_price"]  # move SL to breakeven
 
         message = (
-f"🟢 <b>T1 HIT - PARTIAL BOOKED</b>\n\n"
+f"🟢 <b>T1 HIT - SL TO BREAKEVEN</b>\n\n"
 f"<b>Stock:</b> {stock}\n"
 f"<b>LTP:</b> {ltp}\n"
-f"<b>Booked Qty:</b> {booked}\n"
-f"<b>Remaining Qty:</b> {trade['remaining_qty']}\n"
+f"<b>Qty Held:</b> {trade['remaining_qty']}\n"
 f"<b>SL moved to:</b> {trade['entry_price']}"
 )
 
