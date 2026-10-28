@@ -10,9 +10,6 @@ from app.services.mstock_intraday_chart import get_intraday_chart_csv
 
 logger = logging.getLogger(__name__)
 
-# From past trades: entries >0.5% above scan high and gap-down opens lost money
-MAX_ABOVE_SCAN_HIGH_PCT = 0.5
-
 
 def select_and_rank_stocks(interval="5minute"):
 
@@ -90,18 +87,6 @@ def select_and_rank_stocks(interval="5minute"):
         first_candle_low = float(intraday_df.iloc[0]["low"])
         first_candle_high = float(intraday_df.iloc[0]["high"])
         previous_candle_close = float(intraday_df.iloc[-2]["close"])
-        day_open = float(intraday_df.iloc[0]["open"])
-        prev_day_close = float(row["Price"])  # scan-day close
-
-        # --------------------------------
-        # Gap-down filter
-        # --------------------------------
-        if day_open < prev_day_close:
-            logger.info(
-                "%s → Rejected (Gap-down open %.2f < prev close %.2f)",
-                stock_name, day_open, prev_day_close
-            )
-            continue
 
         logger.info(
             "%s | FirstHigh: %.2f | ScanHigh: %.2f | PrevClose: %.2f",
@@ -167,17 +152,6 @@ def select_and_rank_stocks(interval="5minute"):
 
         if extension_percent > 2:
             logger.info("%s → Rejected (Too Extended)", stock_name)
-            continue
-
-        # Late entry: breakout level can sit far above scan high when the
-        # first candle runs up (e.g. GESHIP +1.35%, SHADOWFAX +2.2%)
-        above_scan_percent = ((ltp - scan_high) / scan_high) * 100
-
-        if above_scan_percent > MAX_ABOVE_SCAN_HIGH_PCT:
-            logger.info(
-                "%s → Rejected (%.2f%% above ScanHigh, max %.2f%%)",
-                stock_name, above_scan_percent, MAX_ABOVE_SCAN_HIGH_PCT
-            )
             continue
 
         score = sl_percent + extension_percent
