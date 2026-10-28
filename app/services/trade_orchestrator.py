@@ -11,8 +11,6 @@ from app.services.mstock_telegram_sender import mstock_send_telegram_message
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-MAX_TRADES_PER_WEEK = 3
-
 
 # --------------------------------------------------
 # GLOBAL DAILY LOCK
@@ -36,22 +34,6 @@ def already_traded_today():
 
 
 # --------------------------------------------------
-# WEEKLY LIMIT (Mon–Sun)
-# --------------------------------------------------
-def trades_this_week():
-    df = load_trades()
-
-    if df.empty or "entry_date" not in df.columns:
-        return 0
-
-    entry_dates = pd.to_datetime(df["entry_date"], format="mixed", errors="coerce").dt.date
-    today = datetime.now().date()
-    week_start = today - pd.Timedelta(days=today.weekday())
-
-    return int(((entry_dates >= week_start) & (entry_dates <= today)).sum())
-
-
-# --------------------------------------------------
 # ENTRY ENGINE - ONE TRADE PER DAY
 # --------------------------------------------------
 def run_entry_engine():
@@ -65,15 +47,6 @@ def run_entry_engine():
         #     "⚠️ Trade already taken today. Entry engine skipped."
         # )
 
-        return
-
-    # 🔒 WEEKLY TRADE LIMIT
-    week_count = trades_this_week()
-    if week_count >= MAX_TRADES_PER_WEEK:
-        logger.info(
-            "Weekly limit reached (%d/%d). Skipping entry engine.",
-            week_count, MAX_TRADES_PER_WEEK
-        )
         return
 
     logger.info("Running selection engine...")
