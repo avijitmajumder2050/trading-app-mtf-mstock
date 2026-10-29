@@ -34,6 +34,11 @@ EVENING_TIME = _parse_time(
     time(16, 30),
 )
 
+# --- Order product for new entries ---
+# CNC = delivery (no MTF pledge DP charges, no MTF interest, no leverage).
+# Exits use the product stored on each trade, so older MTF trades still exit as MTF.
+ORDER_PRODUCT = "CNC"
+
 # --- AWS Config ---
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 

@@ -2,6 +2,7 @@ import logging
 import time
 from app.config.mstock_auth import get_mstock_client
 from app.services.mstock_trade_store import append_trade_row, update_trade_row
+from app.config.settings import ORDER_PRODUCT
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -121,8 +122,14 @@ def place_order_confirmed(payload: dict):
     }
 
 
+def trade_product(trade) -> str:
+    """Product a trade was bought with; rows before CNC switch have none (MTF)."""
+    product = trade.get("product")
+    return product if isinstance(product, str) and product else "MTF"
+
+
 # ==========================================================
-# ENTRY (MTF - NO BROKER SL)
+# ENTRY (NO BROKER SL)
 # ==========================================================
 
 def execute_mtf_entry(trade: dict):
@@ -134,12 +141,12 @@ def execute_mtf_entry(trade: dict):
         "_transaction_type": "BUY",
         "_order_type": "MARKET",
         "_quantity": trade["qty"],
-        "_product": "MTF",
+        "_product": ORDER_PRODUCT,
         "_validity": "DAY",
         "_price": 0,
         "_trigger_price": 0,
         "_disclosed_quantity": 0,
-        "_tag": "MTF_ENTRY"
+        "_tag": f"{ORDER_PRODUCT}_ENTRY"
     }
 
     entry = place_order_confirmed(entry_payload)
@@ -165,6 +172,7 @@ def execute_mtf_entry(trade: dict):
         "target2": trade["target2"],
         "qty": trade["qty"],
         "remaining_qty": trade["qty"],
+        "product": ORDER_PRODUCT,
         "entry_order_id": entry_order_id,
         "sl_hit_today": False,
         "t1_hit": False,
@@ -176,7 +184,7 @@ def execute_mtf_entry(trade: dict):
 
     append_trade_row(trade_row)
 
-    logger.info("MTF trade saved for monitoring (Logical SL enabled).")
+    logger.info("%s trade saved for monitoring (Logical SL enabled).", ORDER_PRODUCT)
 
     return {
         "entry_order_id": entry_order_id
@@ -200,7 +208,7 @@ def exit_full_position(trade: dict, reason="MANUAL_EXIT"):
         "_transaction_type": "SELL",
         "_order_type": "MARKET",
         "_quantity": trade["remaining_qty"],
-        "_product": "MTF",
+        "_product": trade_product(trade),
         "_validity": "DAY",
         "_price": 0,
         "_trigger_price": 0,
@@ -252,7 +260,7 @@ def exit_partial_position(trade: dict, qty_to_exit: int):
         "_transaction_type": "SELL",
         "_order_type": "MARKET",
         "_quantity": qty_to_exit,
-        "_product": "MTF",
+        "_product": trade_product(trade),
         "_validity": "DAY",
         "_price": 0,
         "_trigger_price": 0,

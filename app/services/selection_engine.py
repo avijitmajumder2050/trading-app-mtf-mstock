@@ -10,6 +10,11 @@ from app.services.mstock_intraday_chart import get_intraday_chart_csv
 
 logger = logging.getLogger(__name__)
 
+# Best rule in mStock 5m backtest (Jan-Oct 2026): scan-high break, no
+# gap-down, entry <= 0.5% above scan high, SL (first candle low) <= 1.5%
+MAX_EXTENSION_PCT = 0.5
+MAX_SL_PCT = 1.5
+
 
 def select_and_rank_stocks(interval="5minute"):
 
@@ -87,47 +92,42 @@ def select_and_rank_stocks(interval="5minute"):
         first_candle_low = float(intraday_df.iloc[0]["low"])
         first_candle_high = float(intraday_df.iloc[0]["high"])
         previous_candle_close = float(intraday_df.iloc[-2]["close"])
+        day_open = float(intraday_df.iloc[0]["open"])
+        prev_day_close = float(row["Price"])  # scan-day close
 
         logger.info(
-            "%s | FirstHigh: %.2f | ScanHigh: %.2f | PrevClose: %.2f",
+            "%s | Open: %.2f | PrevDayClose: %.2f | FirstHigh: %.2f | ScanHigh: %.2f | PrevClose: %.2f",
             stock_name,
+            day_open,
+            prev_day_close,
             first_candle_high,
             scan_high,
             previous_candle_close
         )
 
         # --------------------------------
-        # 4️⃣ Dual Breakout Logic (Order Independent)
+        # 4️⃣ Gap-down filter
         # --------------------------------
-        orb_break = ltp > first_candle_high
-        scan_break = ltp > scan_high
-
-        if not (orb_break and scan_break):
-            logger.info("%s → Rejected (Both ORB and ScanHigh not broken)", stock_name)
+        if day_open < prev_day_close:
+            logger.info("%s → Rejected (Gap-down open)", stock_name)
             continue
 
+        # --------------------------------
+        # 5️⃣ Scan-high breakout (first-candle high NOT required:
+        #     waiting for it made entries late and lost money in backtest)
+        # --------------------------------
+        if ltp <= scan_high:
+            logger.info("%s → Rejected (ScanHigh not broken)", stock_name)
+            continue
 
-        orb_high = first_candle_high
-        scan_high_level = scan_high
-        
-        breakout_level = max(first_candle_high, scan_high)
-        logger.info(
-    "%s | ORB: %.2f | ScanHigh: %.2f | BreakoutLevel: %.2f | PrevClose: %.2f | LTP: %.2f",
-    stock_name,
-    orb_high,
-    scan_high_level,
-    breakout_level,
-    previous_candle_close,
-    ltp
-)
-        
+        breakout_level = scan_high
 
         # Fresh breakout check
         if previous_candle_close >= breakout_level:
             logger.info("%s → Rejected (Breakout already happened earlier)", stock_name)
             continue
 
-        logger.info("%s → Fresh Dual Breakout Confirmed ✅", stock_name)
+        logger.info("%s → Fresh ScanHigh Breakout Confirmed ✅", stock_name)
 
         # --------------------------------
         # 5️⃣ Stop Loss Logic
@@ -140,8 +140,12 @@ def select_and_rank_stocks(interval="5minute"):
 
         sl_percent = ((ltp - sl_price) / ltp) * 100
 
+        if sl_percent > MAX_SL_PCT:
+            logger.info("%s → Rejected (SL %.2f%% > %.2f%%)", stock_name, sl_percent, MAX_SL_PCT)
+            continue
+
         # --------------------------------
-        # 6️⃣ Extension Filter
+        # 6️⃣ Extension Filter (from ScanHigh)
         # --------------------------------
         extension_percent = ((ltp - breakout_level) / breakout_level) * 100
 
@@ -150,7 +154,7 @@ def select_and_rank_stocks(interval="5minute"):
             stock_name, extension_percent
         )
 
-        if extension_percent > 2:
+        if extension_percent > MAX_EXTENSION_PCT:
             logger.info("%s → Rejected (Too Extended)", stock_name)
             continue
 

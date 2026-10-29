@@ -1,6 +1,7 @@
 import logging
 from app.broker.fund_manager import get_cached_fund ,get_mstock_cached_fund
-from app.broker.leverage_manager import get_leverage,get_mstock_leverage 
+from app.broker.leverage_manager import get_leverage,get_mstock_leverage
+from app.config.settings import ORDER_PRODUCT
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,8 @@ def calculate_mstock_position_size(
     # Risk based qty
     qty_by_risk = int(max_loss / sl_point)
 
-    # Fund based qty
-    leverage = get_mstock_leverage(sec_id)
+    # Fund based qty (leverage only applies to MTF; CNC uses own cash)
+    leverage = get_mstock_leverage(sec_id) if ORDER_PRODUCT == "MTF" else 1.0
     fund = get_mstock_cached_fund()/2
 
     qty_by_fund = int((fund * leverage) / price)

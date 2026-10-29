@@ -2,7 +2,7 @@ import pandas as pd
 import logging
 from datetime import datetime, time
 from app.services.mstock_trade_store import load_trades, save_trades
-from app.services.mstock_order_executor import place_order_confirmed, get_order_fill, DEAD_STATUSES, FILLED_STATUSES
+from app.services.mstock_order_executor import place_order_confirmed, get_order_fill, trade_product, DEAD_STATUSES, FILLED_STATUSES
 from app.services.mstock_telegram_sender import mstock_send_telegram_message
 from app.services.mstock_live import get_mstock_ltp
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def _as_bool(value):
     return bool(value) and not pd.isna(value)
 
 
-def _sell(stock, qty, tag):
+def _sell(stock, qty, tag, product):
     payload = {
         "_variety": "REGULAR",
         "_tradingsymbol": f"{stock}-EQ",
@@ -25,7 +25,7 @@ def _sell(stock, qty, tag):
         "_transaction_type": "SELL",
         "_order_type": "MARKET",
         "_quantity": int(qty),
-        "_product": "MTF",
+        "_product": product,
         "_validity": "DAY",
         "_price": 0,
         "_trigger_price": 0,
@@ -157,7 +157,7 @@ def _process_trade(trade, live_data, is_market_close):
             logger.info("%s SL triggered today, waiting for day end", stock)
             return trade
 
-        result = _sell(stock, trade["remaining_qty"], "DAY_SL_EXIT")
+        result = _sell(stock, trade["remaining_qty"], "DAY_SL_EXIT", trade_product(trade))
         if result:
             _close(trade, "SL_DAY_EXIT", result, ltp)
             note = "AMO queued, fills at next open" if result["pending"] else f"Filled @ {trade['exit_price']}"
@@ -195,7 +195,7 @@ f"<b>SL moved to:</b> {trade['entry_price']}"
     # ------------------------------
     if trade["remaining_qty"] > 0 and ltp >= trade["target2"]:
 
-        result = _sell(stock, trade["remaining_qty"], "T2_EXIT")
+        result = _sell(stock, trade["remaining_qty"], "T2_EXIT", trade_product(trade))
         if result:
             message = (
 f"🎯 <b>T2 TARGET HIT</b>\n\n"
