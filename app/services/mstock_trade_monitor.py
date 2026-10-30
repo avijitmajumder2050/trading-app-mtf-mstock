@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 
 MARKET_CLOSE = time(15, 30)  # NSE close
 
+# Weekly mode: no T1/T2 — winners run until Friday exit, losers exit on SL.
+# (1m backtest Jan-Oct 2026: taking profit at 2R turned a profit into a loss.)
+USE_TARGETS = False
+WEEK_END_EXIT_TIME = time(15, 15)  # Friday: sell all open trades before close
+
 
 def _as_bool(value):
     # CSV round-trips can turn booleans into "True"/"False" strings or NaN
@@ -174,7 +179,7 @@ def _process_trade(trade, live_data, is_market_close):
     # T1: move SL to breakeven only (no partial sell — each extra
     # sell order adds DP charges; full qty exits at T2 or SL)
     # ------------------------------
-    if not trade["t1_hit"] and ltp >= trade["target1"]:
+    if USE_TARGETS and not trade["t1_hit"] and ltp >= trade["target1"]:
         trade["t1_hit"] = True
         trade["current_sl"] = trade["entry_price"]  # move SL to breakeven
 
@@ -193,7 +198,7 @@ f"<b>SL moved to:</b> {trade['entry_price']}"
     # ------------------------------
     # T2 full exit
     # ------------------------------
-    if trade["remaining_qty"] > 0 and ltp >= trade["target2"]:
+    if USE_TARGETS and trade["remaining_qty"] > 0 and ltp >= trade["target2"]:
 
         result = _sell(stock, trade["remaining_qty"], "T2_EXIT", trade_product(trade))
         if result:
@@ -269,3 +274,55 @@ def monitor_trades():
         updated_trades.append(trade)
 
     save_trades(pd.DataFrame(updated_trades))
+
+
+def exit_all_week_end():
+    """
+    Friday (before close): sell every ACTIVE trade at market so the
+    weekly hold ends at Friday's price, not Monday's open.
+    Failed sells stay ACTIVE (alert sent) and are retried next run.
+    Returns the number of trades still ACTIVE.
+    """
+    df = load_trades()
+    if df.empty:
+        return 0
+
+    updated_trades = []
+    closed = []
+
+    for _, trade in df.iterrows():
+
+        if trade["status"] == "CLOSED":
+            updated_trades.append(trade)
+            continue
+
+        stock = trade["stock_name"]
+        try:
+            qty = max(0, int(trade["remaining_qty"]))
+            if qty == 0:
+                updated_trades.append(trade)
+                continue
+
+            result = _sell(stock, qty, "WEEK_END_EXIT", trade_product(trade))
+            if result:
+                _close(trade, "WEEK_END", result, None)
+                closed.append(f"{stock} x{qty} @ {trade['exit_price'] or 'pending'}")
+                logger.info("%s week-end exit placed.", stock)
+        except Exception:
+            logger.exception("Week-end exit failed for %s", stock)
+            mstock_send_telegram_message(
+                f"⚠️ <b>WEEK-END EXIT ERROR</b>\n\n"
+                f"<b>Stock:</b> {stock}\n"
+                f"Check logs."
+            )
+
+        updated_trades.append(trade)
+
+    save_trades(pd.DataFrame(updated_trades))
+
+    if closed:
+        mstock_send_telegram_message(
+            "📅 <b>FRIDAY WEEK-END EXIT</b>\n\n" + "\n".join(closed)
+        )
+
+    return sum(1 for t in updated_trades if t["status"] != "CLOSED")

@@ -179,3 +179,110 @@ def select_and_rank_stocks(interval="5minute"):
     logger.info("Total breakout candidates: %d", len(ranked))
 
     return ranked
+
+
+# ==========================================================
+# WEEKLY MODE (Mon/Tue entries, hold to Friday)
+# Best in 1m backtest Jan-Oct 2026: 3 consecutive 1m closes
+# above scan high, entry <= 0.5% above it, SL = day low (0.5-2%)
+# ==========================================================
+WEEKLY_SUSTAIN_CANDLES = 3
+WEEKLY_MAX_EXT_PCT = 0.5
+WEEKLY_MIN_SL_PCT = 0.5
+WEEKLY_MAX_SL_PCT = 2.0
+
+
+def _sustained_above(closes, level, candles):
+    """True if the last `candles` + 1 completed closes (cross + sustain) are all above level."""
+    recent = closes[-(candles + 1):]
+    return len(recent) == candles + 1 and all(close > level for close in recent)
+
+
+def select_weekly_breakouts(exclude=()):
+
+    df = read_ema_momentum_from_s3()
+
+    if df.empty:
+        logger.warning("EMA file empty")
+        return []
+
+    df.columns = df.columns.str.strip()
+    df = df[~df["Stock Name"].isin(set(exclude))]
+
+    if df.empty:
+        return []
+
+    symbols = [f"NSE:{name}-EQ" for name in df["Stock Name"].tolist()]
+    live_data = get_mstock_ltp(symbols)
+
+    if not live_data:
+        logger.warning("No LTP data received")
+        return []
+
+    now_minute = pd.Timestamp.now().floor("min")
+    selected = []
+
+    for _, row in df.iterrows():
+
+        stock_name = row["Stock Name"]
+        sec_id = str(row["Security ID"])
+        scan_high = float(row["High"])
+
+        ltp_data = live_data.get(f"NSE:{stock_name}-EQ") or live_data.get(f"NSE:{stock_name}-BE")
+        ltp = float((ltp_data or {}).get("last_price") or 0)
+
+        if not ltp:
+            logger.info("%s → No LTP data", stock_name)
+            continue
+
+        # Not above scan high, or already too far above it
+        extension_percent = ((ltp - scan_high) / scan_high) * 100
+        if extension_percent <= 0:
+            continue
+        if extension_percent > WEEKLY_MAX_EXT_PCT:
+            logger.info("%s → Rejected (%.2f%% above ScanHigh)", stock_name, extension_percent)
+            continue
+
+        csv_data = get_intraday_chart_csv(symboltoken=sec_id, interval="minute")
+        if not csv_data:
+            logger.info("%s → No 1m data", stock_name)
+            continue
+
+        candles = pd.read_csv(io.StringIO(csv_data))
+        candles["timestamp"] = pd.to_datetime(candles["timestamp"]).dt.tz_localize(None)
+
+        # Only completed 1m candles count towards the sustain check
+        completed = candles[candles["timestamp"] < now_minute]
+
+        band = scan_high * (1 + WEEKLY_MAX_EXT_PCT / 100)
+        if completed.empty or not scan_high < float(completed["close"].iloc[-1]) <= band:
+            continue
+
+        if not _sustained_above(completed["close"].tolist(), scan_high, WEEKLY_SUSTAIN_CANDLES):
+            logger.info("%s → Waiting (not sustained %d min above ScanHigh)", stock_name, WEEKLY_SUSTAIN_CANDLES)
+            continue
+
+        sl_price = float(candles["low"].min())
+        sl_percent = ((ltp - sl_price) / ltp) * 100
+
+        if not WEEKLY_MIN_SL_PCT <= sl_percent <= WEEKLY_MAX_SL_PCT:
+            logger.info("%s → Rejected (SL %.2f%% outside %.1f-%.1f%%)",
+                        stock_name, sl_percent, WEEKLY_MIN_SL_PCT, WEEKLY_MAX_SL_PCT)
+            continue
+
+        logger.info(
+            "%s → ✅ WEEKLY SELECTED | LTP %.2f | ScanHigh %.2f | Ext %.2f%% | SL %.2f (%.2f%%)",
+            stock_name, ltp, scan_high, extension_percent, sl_price, sl_percent
+        )
+
+        selected.append({
+            "stock_name": stock_name,
+            "security_id": sec_id,
+            "entry": ltp,
+            "sl": sl_price,
+            "sl_percent": round(sl_percent, 2),
+            "score": round(extension_percent, 2)
+        })
+
+    # Closest to the scan high first
+    return sorted(selected, key=lambda x: x["score"])

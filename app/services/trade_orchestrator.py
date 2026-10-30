@@ -1,8 +1,8 @@
 import logging
-from datetime import datetime
+from datetime import datetime, time
 import pandas as pd
 
-from app.services.selection_engine import select_and_rank_stocks
+from app.services.selection_engine import select_weekly_breakouts
 from app.services.rule_engine import enrich_with_trade_rules
 from app.services.mstock_order_executor import execute_mtf_entry
 from app.services.mstock_trade_store import load_trades
@@ -11,54 +11,61 @@ from app.services.mstock_telegram_sender import mstock_send_telegram_message
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# --------------------------------------------------
+# WEEKLY MODE: enter Mon/Tue only, max 2 trades a week,
+# hold until Friday exit (see mstock_trade_monitor)
+# --------------------------------------------------
+ENTRY_WEEKDAYS = (0, 1)          # Monday, Tuesday
+ENTRY_CUTOFF = time(11, 25)
+MAX_TRADES_PER_WEEK = 2
 
-# --------------------------------------------------
-# GLOBAL DAILY LOCK
-# --------------------------------------------------
-def already_traded_today():
+
+def stocks_traded_this_week():
     df = load_trades()
 
-    if df.empty:
-        return False
+    if df.empty or "entry_date" not in df.columns:
+        return []
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    entry_dates = pd.to_datetime(df["entry_date"], format="mixed", errors="coerce").dt.date
+    today = datetime.now().date()
+    week_start = today - pd.Timedelta(days=today.weekday())
 
-    if "entry_date" not in df.columns:
-        return False
-
-    today_trades = df[
-        (df["entry_date"].astype(str) == today)
-    ]
-
-    return not today_trades.empty
+    week = df[(entry_dates >= week_start) & (entry_dates <= today)]
+    return week["stock_name"].tolist()
 
 
 # --------------------------------------------------
-# ENTRY ENGINE - ONE TRADE PER DAY
+# ENTRY ENGINE
 # --------------------------------------------------
 def run_entry_engine():
 
-    # 🔒 DAILY TRADE LOCK
-    if already_traded_today():
-        logger.info("Trade already taken today. Skipping entry engine.")
+    now = datetime.now()
 
-        # Optional: send telegram when skipped
-        # mstock_send_telegram_message(
-        #     "⚠️ Trade already taken today. Entry engine skipped."
-        # )
-
+    if now.weekday() not in ENTRY_WEEKDAYS:
+        logger.info("Weekly mode: entries only on Mon/Tue. Skipping entry engine.")
         return
 
-    logger.info("Running selection engine...")
-
-    # 1️⃣ Stock selection
-    ranked = select_and_rank_stocks(interval="5minute")
-
-    if not ranked or len(ranked) < 1:
-        logger.info("Less than 1 breakout stocks found. Skipping cycle.")
+    if now.time() > ENTRY_CUTOFF:
+        logger.info("Entry cutoff %s passed. Skipping entry engine.", ENTRY_CUTOFF)
         return
 
-    # 2️⃣ Apply trade rules
+    traded = stocks_traded_this_week()
+    slots = MAX_TRADES_PER_WEEK - len(traded)
+
+    if slots <= 0:
+        logger.info("Weekly limit reached (%d/%d). Skipping entry engine.", len(traded), MAX_TRADES_PER_WEEK)
+        return
+
+    logger.info("Running weekly selection engine (%d slot(s) left)...", slots)
+
+    # 1️⃣ Stock selection (one trade per stock per week)
+    ranked = select_weekly_breakouts(exclude=traded)
+
+    if not ranked:
+        logger.info("No weekly breakout yet. Skipping cycle.")
+        return
+
+    # 2️⃣ Apply trade rules (position size)
     trades = enrich_with_trade_rules(
         ranked,
         max_loss_per_trade=1000
@@ -68,8 +75,11 @@ def run_entry_engine():
         logger.info("No valid trades after rule engine.")
         return
 
-    # 3️⃣ Try ranked stocks until one succeeds
+    # 3️⃣ Enter best candidates until the weekly slots are filled
     for trade in trades:
+
+        if slots <= 0:
+            break
 
         stock_name = trade["stock_name"]
 
@@ -78,25 +88,18 @@ def run_entry_engine():
         result = execute_mtf_entry(trade)
 
         if result:
-
-            entry_price = trade.get("entry_price")
-            sl = trade.get("sl")
-            target1 = trade.get("target1")
-            target2 = trade.get("target2")
-            qty = trade.get("qty")
+            slots -= 1
 
             telegram_message = (
-                f"🚀 <b>MTF ENTRY EXECUTED</b>\n\n"
+                f"🚀 <b>WEEKLY ENTRY EXECUTED</b>\n\n"
                 f"<b>Stock:</b> {stock_name}\n"
-                f"<b>Qty:</b> {qty}\n"
-                f"<b>Entry:</b> {entry_price}\n"
-                f"<b>SL:</b> {sl}\n"
-                f"<b>T1:</b> {target1}\n"
-                f"<b>T2:</b> {target2}\n"
+                f"<b>Qty:</b> {trade.get('qty')}\n"
+                f"<b>Entry:</b> {trade.get('entry_price')}\n"
+                f"<b>SL:</b> {trade.get('sl')}\n"
+                f"<b>Exit:</b> SL (day close) or Friday 15:15\n"
                 f"<b>Order ID:</b> {result['entry_order_id']}"
             )
 
-            # ✅ Send Telegram Alert
             mstock_send_telegram_message(telegram_message)
 
             logger.info(
@@ -105,13 +108,8 @@ def run_entry_engine():
                 result["entry_order_id"]
             )
 
-            break
-
         else:
             logger.warning(
                 "Entry FAILED for %s. Trying next ranked stock...",
                 stock_name
             )
-
-    else:
-        logger.info("No entries executed in this cycle.")
