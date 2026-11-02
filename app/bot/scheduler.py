@@ -64,11 +64,67 @@ async def terminate_at(target_hour=10, target_minute=40):
 
 
 
+# --------------------------
+# Manual-start guard
+# --------------------------
+# The momentum UI's server toggle launches the EC2 with tag manual-start=true.
+# Those instances must stay up until the user switches the toggle OFF, so the
+# session-end self-terminate is skipped for them.
+MANUAL_TAG_KEY = "manual-start"
+
+
+def is_manual_start(instance_id, region="ap-south-1"):
+    try:
+        ec2 = boto3.client("ec2", region_name=region)
+        r = ec2.describe_tags(Filters=[
+            {"Name": "resource-id", "Values": [instance_id]},
+            {"Name": "key", "Values": [MANUAL_TAG_KEY]},
+        ])
+        return any(t.get("Value", "").lower() == "true" for t in r.get("Tags", []))
+    except Exception as e:
+        # Fail safe to the old behaviour (terminate) if tags can't be read.
+        logging.error(f"❌ Could not read {MANUAL_TAG_KEY} tag: {e}")
+        return False
+
+
+def seconds_until_next_session(now=None):
+    """Seconds until the next weekday ENTRY_START or EVENING_TIME (whichever is first)."""
+    from datetime import timedelta
+    from app.config.settings import ENTRY_START, EVENING_TIME
+    now = now or datetime.now()
+    candidates = []
+    for d in range(0, 8):
+        day = (now + timedelta(days=d)).date()
+        if day.weekday() >= 5:          # skip Sat/Sun
+            continue
+        for t in (ENTRY_START, EVENING_TIME):
+            at = datetime.combine(day, t)
+            if at > now + timedelta(seconds=60):
+                candidates.append(at)
+    return (min(candidates) - now).total_seconds()
+
+
 async def terminate_after_delay(max_delay_minutes=5):
     """
     Terminate EC2 after random delay (1 to max_delay_minutes).
     Default: 1–5 minutes.
+
+    Manually started instances (tag manual-start=true) are NOT terminated:
+    this sleeps until the next session start instead, then returns so systemd
+    restarts main.py into the right session. (Returning immediately would make
+    systemd re-run the evening monitor every ~25s.)
     """
+    instance_id = get_instance_id()
+    if instance_id and instance_id != "UNKNOWN" and is_manual_start(instance_id):
+        wait = seconds_until_next_session()
+        logging.info(f"🟢 Manual start ({MANUAL_TAG_KEY}=true) — skipping EC2 termination; "
+                     f"idle {wait/3600:.1f}h until next session")
+        await send_telegram_message(
+            "🟢 Manually started EC2 — auto-terminate skipped. Switch the server toggle OFF to terminate."
+        )
+        await asyncio.sleep(wait)
+        return
+
     delay_minutes = random.randint(1, max_delay_minutes)
 
     logging.info(f"🕒 EC2 will terminate in {delay_minutes} minute(s)")
