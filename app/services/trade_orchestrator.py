@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # --------------------------------------------------
-# WEEKLY MODE: enter Mon/Tue only, max 2 trades a week,
+# WEEKLY MODE: enter Mon/Tue only, max 3 trades a week,
 # hold until Friday exit (see mstock_trade_monitor)
 # --------------------------------------------------
 ENTRY_WEEKDAYS = (0, 1)          # Monday, Tuesday
 ENTRY_CUTOFF = time(11, 25)
-MAX_TRADES_PER_WEEK = 2
+MAX_TRADES_PER_WEEK = 3
 
 
 def stocks_traded_this_week():
