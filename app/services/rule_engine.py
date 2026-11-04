@@ -5,6 +5,10 @@ from app.broker.position_sizing import calculate_mstock_position_size
 
 logger = logging.getLogger(__name__)
 
+# Profit target as a multiple of risk (entry - SL): 3 = 1:3 risk-reward.
+# Switch it on/off with USE_TARGET in mstock_trade_monitor.
+TARGET_R = 3
+
 
 def enrich_with_trade_rules(ranked_stocks, max_loss_per_trade=1000):
 
@@ -30,7 +34,7 @@ def enrich_with_trade_rules(ranked_stocks, max_loss_per_trade=1000):
 
         # Targets
         target1 = entry + risk_per_share
-        target2 = entry + (risk_per_share * 2)
+        target2 = entry + risk_per_share * TARGET_R
         logger.info(
             "%s | Target1: %.2f | Target2: %.2f",
             stock_name, target1, target2

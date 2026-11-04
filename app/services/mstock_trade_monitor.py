@@ -6,13 +6,16 @@ from app.services.mstock_order_executor import place_order_confirmed, get_order_
 from app.services.mstock_telegram_sender import mstock_send_telegram_message
 from app.services.mstock_live import get_mstock_ltp
 from app.utils.trading_days import trading_day_number
+from app.services.rule_engine import TARGET_R
 logger = logging.getLogger(__name__)
 
 MARKET_CLOSE = time(15, 30)  # NSE close
 
-# No T1/T2 — winners run until the life-cycle exit, losers exit on SL.
-# (1m backtest Jan-Oct 2026: taking profit at 2R turned a profit into a loss.)
-USE_TARGETS = False
+# Exits: SL, target at TARGET_R x risk (1:3), or the day-5 life-cycle exit.
+# Daily backtest Feb-Nov 2026: 3R target gave a lower total than no target
+# but a much smaller drawdown (-8.6k vs -22.4k).
+USE_TARGET = True                  # sell all at entry + TARGET_R * (entry - initial SL)
+USE_BREAKEVEN = False              # move SL to entry at 1R (off)
 LIFE_TRADING_DAYS = 5              # entry day = day 1; sell on day 5
 LIFE_EXIT_TIME = time(15, 15)      # time of day for the life-cycle exit
 
@@ -49,6 +52,18 @@ def _sell(stock, qty, tag, product):
             f"Trade left open, will retry next cycle."
         )
     return result
+
+
+def _target_price(trade):
+    """entry + TARGET_R * (entry - initial SL); None if the row lacks them."""
+    try:
+        entry = float(trade["entry_price"])
+        sl = float(trade.get("initial_sl") if pd.notna(trade.get("initial_sl")) else trade["current_sl"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    if pd.isna(entry) or pd.isna(sl) or sl >= entry:
+        return None
+    return entry + TARGET_R * (entry - sl)
 
 
 def _close(trade, reason, result, ltp):
@@ -181,7 +196,7 @@ def _process_trade(trade, live_data, is_market_close):
     # T1: move SL to breakeven only (no partial sell — each extra
     # sell order adds DP charges; full qty exits at T2 or SL)
     # ------------------------------
-    if USE_TARGETS and not trade["t1_hit"] and ltp >= trade["target1"]:
+    if USE_BREAKEVEN and not trade["t1_hit"] and ltp >= trade["target1"]:
         trade["t1_hit"] = True
         trade["current_sl"] = trade["entry_price"]  # move SL to breakeven
 
@@ -198,25 +213,29 @@ f"<b>SL moved to:</b> {trade['entry_price']}"
         logger.info("%s T1 hit at %.2f", stock, ltp)
 
     # ------------------------------
-    # T2 full exit
+    # Target full exit (TARGET_R x initial risk, so rows saved with an
+    # older target2 also use the current multiple)
     # ------------------------------
-    if USE_TARGETS and trade["remaining_qty"] > 0 and ltp >= trade["target2"]:
+    target = _target_price(trade)
 
-        result = _sell(stock, trade["remaining_qty"], "T2_EXIT", trade_product(trade))
+    if USE_TARGET and trade["remaining_qty"] > 0 and target and ltp >= target:
+
+        result = _sell(stock, trade["remaining_qty"], f"TARGET_{TARGET_R}R", trade_product(trade))
         if result:
             message = (
-f"🎯 <b>T2 TARGET HIT</b>\n\n"
+f"🎯 <b>TARGET 1:{TARGET_R} HIT</b>\n\n"
 f"<b>Stock:</b> {stock}\n"
 f"<b>LTP:</b> {ltp}\n"
+f"<b>Target:</b> {round(target, 2)}\n"
 f"<b>Exit Qty:</b> {trade['remaining_qty']}\n"
 f"<b>Trade Closed</b>"
 )
 
             mstock_send_telegram_message(message)
 
-            logger.info("%s T2 hit. Trade closed.", stock)
+            logger.info("%s target %.2f hit. Trade closed.", stock, target)
 
-            _close(trade, "T2", result, ltp)
+            _close(trade, f"TARGET_{TARGET_R}R", result, ltp)
 
     elif trade["remaining_qty"] == 0:
         trade["status"] = "CLOSED"

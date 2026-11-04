@@ -22,8 +22,8 @@ def _parse_time(value: str, fallback: time) -> time:
         return fallback
 
 ENTRY_START = _parse_time(
-    get_param("/trading-app-mtf/schedule/entry_start", decrypt=False, default="09:31"),
-    time(9, 31),
+    get_param("/trading-app-mtf/schedule/entry_start", decrypt=False, default="09:15"),
+    time(9, 15),
 )
 ENTRY_END = _parse_time(
     get_param("/trading-app-mtf/schedule/entry_end", decrypt=False, default="11:25"),

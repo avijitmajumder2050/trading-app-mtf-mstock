@@ -106,7 +106,8 @@ def run_entry_engine():
                 f"<b>Qty:</b> {trade.get('qty')}\n"
                 f"<b>Entry:</b> {trade.get('entry_price')}\n"
                 f"<b>SL:</b> {trade.get('sl')}\n"
-                f"<b>Exit:</b> SL (day close) or day-5 15:15\n"
+                f"<b>Target (1:3):</b> {trade.get('target2')}\n"
+                f"<b>Exit:</b> target, SL (day close) or day-5 15:15\n"
                 f"<b>Order ID:</b> {result['entry_order_id']}"
             )
 
