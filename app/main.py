@@ -12,7 +12,9 @@ logging.basicConfig(
 )
 
 from app.services.trade_orchestrator import run_entry_engine
-from app.services.mstock_trade_monitor import monitor_trades, exit_all_week_end, WEEK_END_EXIT_TIME
+from app.services.mstock_trade_monitor import (
+    monitor_trades, exit_life_cycle, life_exit_due_today, LIFE_EXIT_TIME, LIFE_TRADING_DAYS,
+)
 from app.services.mstock_reconcile import reconcile_positions
 from app.bot.scheduler import terminate_after_delay   # adjust path if needed
 from app.config.settings import ENTRY_START, ENTRY_END, EVENING_TIME
@@ -25,9 +27,9 @@ POLL_SECONDS = 30  # 1m sustain check needs frequent polls
 LAST_EXIT_ATTEMPT = dt_time(15, 28)
 
 
-def session_end():
-    # Friday: stay up until the week-end exit is done (before 15:30 close)
-    if datetime.now().weekday() == 4:
+def session_end(exit_due):
+    # A trade reaching its last day: stay up until its exit is done (before 15:30 close)
+    if exit_due:
         return max(ENTRY_END, LAST_EXIT_ATTEMPT)
     return ENTRY_END
 
@@ -37,13 +39,16 @@ async def main():
     now = datetime.now().time()
 
     # ==============================
-    # MARKET SESSION (ENTRY_START–ENTRY_END; Friday until week-end exit)
+    # MARKET SESSION (ENTRY_START–ENTRY_END; until LIFE_EXIT_TIME exit
+    # on days a trade reaches its last day)
     # ==============================
-    if ENTRY_START <= now <= session_end():
+    exit_due = life_exit_due_today()
 
-        logger.info("Morning trading session started")
+    if ENTRY_START <= now <= session_end(exit_due):
 
-        while datetime.now().time() <= session_end():
+        logger.info("Morning trading session started (day-%d exit due today: %s)", LIFE_TRADING_DAYS, exit_due)
+
+        while datetime.now().time() <= session_end(exit_due):
 
             try:
                 logger.info("Running Entry Engine...")
@@ -52,9 +57,9 @@ async def main():
                 logger.info("Running Monitor...")
                 monitor_trades()
 
-                if datetime.now().weekday() == 4 and datetime.now().time() >= WEEK_END_EXIT_TIME:
-                    logger.info("Friday %s: week-end exit of all open trades", WEEK_END_EXIT_TIME)
-                    remaining = exit_all_week_end()
+                if exit_due and datetime.now().time() >= LIFE_EXIT_TIME:
+                    logger.info("%s: day-%d exit of due trades", LIFE_EXIT_TIME, LIFE_TRADING_DAYS)
+                    remaining = exit_life_cycle()
                     # retry failed sells until just before the 15:30 close
                     if remaining == 0 or datetime.now().time() >= LAST_EXIT_ATTEMPT:
                         break

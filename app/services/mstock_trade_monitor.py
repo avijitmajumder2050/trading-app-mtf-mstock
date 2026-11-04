@@ -5,14 +5,16 @@ from app.services.mstock_trade_store import load_trades, save_trades
 from app.services.mstock_order_executor import place_order_confirmed, get_order_fill, trade_product, DEAD_STATUSES, FILLED_STATUSES
 from app.services.mstock_telegram_sender import mstock_send_telegram_message
 from app.services.mstock_live import get_mstock_ltp
+from app.utils.trading_days import trading_day_number
 logger = logging.getLogger(__name__)
 
 MARKET_CLOSE = time(15, 30)  # NSE close
 
-# Weekly mode: no T1/T2 — winners run until Friday exit, losers exit on SL.
+# No T1/T2 — winners run until the life-cycle exit, losers exit on SL.
 # (1m backtest Jan-Oct 2026: taking profit at 2R turned a profit into a loss.)
 USE_TARGETS = False
-WEEK_END_EXIT_TIME = time(15, 15)  # Friday: sell all open trades before close
+LIFE_TRADING_DAYS = 5              # entry day = day 1; sell on day 5
+LIFE_EXIT_TIME = time(15, 15)      # time of day for the life-cycle exit
 
 
 def _as_bool(value):
@@ -276,12 +278,25 @@ def monitor_trades():
     save_trades(pd.DataFrame(updated_trades))
 
 
-def exit_all_week_end():
+def _life_due(trade, today=None):
+    return (trade["status"] != "CLOSED"
+            and trading_day_number(trade.get("entry_date"), today) >= LIFE_TRADING_DAYS)
+
+
+def life_exit_due_today():
+    """True if any open trade reaches its last day today (or is overdue)."""
+    df = load_trades()
+    if df.empty:
+        return False
+    return any(_life_due(t) for _, t in df.iterrows())
+
+
+def exit_life_cycle():
     """
-    Friday (before close): sell every ACTIVE trade at market so the
-    weekly hold ends at Friday's price, not Monday's open.
+    Sell every open trade that has reached day LIFE_TRADING_DAYS
+    (entry day = day 1) at market, before the close.
     Failed sells stay ACTIVE (alert sent) and are retried next run.
-    Returns the number of trades still ACTIVE.
+    Returns the number of due trades still open.
     """
     df = load_trades()
     if df.empty:
@@ -292,7 +307,7 @@ def exit_all_week_end():
 
     for _, trade in df.iterrows():
 
-        if trade["status"] == "CLOSED":
+        if not _life_due(trade):
             updated_trades.append(trade)
             continue
 
@@ -303,15 +318,15 @@ def exit_all_week_end():
                 updated_trades.append(trade)
                 continue
 
-            result = _sell(stock, qty, "WEEK_END_EXIT", trade_product(trade))
+            result = _sell(stock, qty, "LIFE_EXIT", trade_product(trade))
             if result:
-                _close(trade, "WEEK_END", result, None)
+                _close(trade, f"DAY{LIFE_TRADING_DAYS}_EXIT", result, None)
                 closed.append(f"{stock} x{qty} @ {trade['exit_price'] or 'pending'}")
-                logger.info("%s week-end exit placed.", stock)
+                logger.info("%s day-%d exit placed.", stock, LIFE_TRADING_DAYS)
         except Exception:
-            logger.exception("Week-end exit failed for %s", stock)
+            logger.exception("Life-cycle exit failed for %s", stock)
             mstock_send_telegram_message(
-                f"⚠️ <b>WEEK-END EXIT ERROR</b>\n\n"
+                f"⚠️ <b>DAY-{LIFE_TRADING_DAYS} EXIT ERROR</b>\n\n"
                 f"<b>Stock:</b> {stock}\n"
                 f"Check logs."
             )
@@ -322,7 +337,7 @@ def exit_all_week_end():
 
     if closed:
         mstock_send_telegram_message(
-            "📅 <b>FRIDAY WEEK-END EXIT</b>\n\n" + "\n".join(closed)
+            f"📅 <b>DAY-{LIFE_TRADING_DAYS} EXIT</b>\n\n" + "\n".join(closed)
         )
 
-    return sum(1 for t in updated_trades if t["status"] != "CLOSED")
+    return sum(1 for t in updated_trades if _life_due(t))
