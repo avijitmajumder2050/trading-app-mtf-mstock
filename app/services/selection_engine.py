@@ -182,14 +182,12 @@ def select_and_rank_stocks(interval="5minute"):
 
 
 # ==========================================================
-# WEEKLY MODE (Mon/Tue entries, hold to Friday)
-# Best in 1m backtest Jan-Oct 2026: 3 consecutive 1m closes
-# above scan high, entry <= 0.5% above it, SL = day low (0.5-2%)
+# BREAKOUT ENTRY (used by 5-day mode in trade_orchestrator)
+# 3 consecutive 1m closes above scan high, entry <= 0.5% above it,
+# SL = today's low so far (no SL % limit; position size scales to it)
 # ==========================================================
 WEEKLY_SUSTAIN_CANDLES = 3
 WEEKLY_MAX_EXT_PCT = 0.5
-WEEKLY_MIN_SL_PCT = 0.5
-WEEKLY_MAX_SL_PCT = 2.0
 
 
 def _sustained_above(closes, level, candles):
@@ -265,9 +263,8 @@ def select_weekly_breakouts(exclude=()):
         sl_price = float(candles["low"].min())
         sl_percent = ((ltp - sl_price) / ltp) * 100
 
-        if not WEEKLY_MIN_SL_PCT <= sl_percent <= WEEKLY_MAX_SL_PCT:
-            logger.info("%s → Rejected (SL %.2f%% outside %.1f-%.1f%%)",
-                        stock_name, sl_percent, WEEKLY_MIN_SL_PCT, WEEKLY_MAX_SL_PCT)
+        if sl_price >= ltp:
+            logger.info("%s → Rejected (invalid SL %.2f >= LTP %.2f)", stock_name, sl_price, ltp)
             continue
 
         logger.info(

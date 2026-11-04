@@ -15,31 +15,34 @@ logger.setLevel(logging.INFO)
 # --------------------------------------------------
 # 5-DAY MODE: enter any weekday, hold each trade 5 trading days
 # (entry day = day 1) or until SL — see mstock_trade_monitor.
-# Daily backtest Feb-Nov 2026: max 2 open gave the best win rate
-# and smallest drawdown; position sizing uses half the cash each.
+# Up to MAX_TRADES_PER_WEEK entries per Mon-Sun week, on one day or
+# spread over several; several qualifying stocks can be entered in the
+# same cycle while slots remain. A stock can be bought again only after
+# its previous trade has closed. Position sizing uses half the cash each.
 # --------------------------------------------------
 ENTRY_WEEKDAYS = (0, 1, 2, 3, 4)  # Monday-Friday
 ENTRY_CUTOFF = time(11, 25)
-MAX_OPEN_TRADES = 2               # None = no limit; funds are the only cap
+MAX_TRADES_PER_WEEK = 3           # None = no weekly limit; funds are the only cap
 
 
-def open_and_today_stocks():
-    """(stocks with an open trade, stocks entered or exited today)."""
+def open_stocks_and_week_entries():
+    """(stocks with an open trade, number of entries this Mon-Sun week)."""
     df = load_trades()
 
     if df.empty or "status" not in df.columns:
-        return [], []
+        return [], 0
 
     open_stocks = df.loc[df["status"] != "CLOSED", "stock_name"].tolist()
 
-    today = datetime.now().date()
-    touched_today = pd.Series(False, index=df.index)
-    for col in ("entry_date", "closed_at"):
-        if col in df.columns:
-            touched_today |= pd.to_datetime(df[col], format="mixed", errors="coerce").dt.date == today
-    today_stocks = df.loc[touched_today, "stock_name"].tolist()
+    if "entry_date" not in df.columns:
+        return open_stocks, 0
 
-    return open_stocks, today_stocks
+    entry_dates = pd.to_datetime(df["entry_date"], format="mixed", errors="coerce").dt.date
+    today = datetime.now().date()
+    week_start = today - pd.Timedelta(days=today.weekday())
+    week_entries = int(((entry_dates >= week_start) & (entry_dates <= today)).sum())
+
+    return open_stocks, week_entries
 
 
 # --------------------------------------------------
@@ -57,17 +60,17 @@ def run_entry_engine():
         logger.info("Entry cutoff %s passed. Skipping entry engine.", ENTRY_CUTOFF)
         return
 
-    open_stocks, today_stocks = open_and_today_stocks()
-    slots = float("inf") if MAX_OPEN_TRADES is None else MAX_OPEN_TRADES - len(open_stocks)
+    open_stocks, week_entries = open_stocks_and_week_entries()
+    slots = float("inf") if MAX_TRADES_PER_WEEK is None else MAX_TRADES_PER_WEEK - week_entries
 
     if slots <= 0:
-        logger.info("Open-trade limit reached (%d/%d). Skipping entry engine.", len(open_stocks), MAX_OPEN_TRADES)
+        logger.info("Weekly limit reached (%d/%d). Skipping entry engine.", week_entries, MAX_TRADES_PER_WEEK)
         return
 
-    logger.info("Running selection engine (%s slot(s) left)...", slots)
+    logger.info("Running selection engine (%s weekly slot(s) left)...", slots)
 
-    # 1️⃣ Stock selection (skip stocks held, or bought/sold today)
-    ranked = select_weekly_breakouts(exclude=set(open_stocks) | set(today_stocks))
+    # 1️⃣ Stock selection (a stock still held is not bought again)
+    ranked = select_weekly_breakouts(exclude=set(open_stocks))
 
     if not ranked:
         logger.info("No weekly breakout yet. Skipping cycle.")
