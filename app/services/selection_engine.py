@@ -3,10 +3,12 @@
 import logging
 import pandas as pd
 import io
+from functools import lru_cache
 
 from app.services.mstock_s3_reader import read_ema_momentum_from_s3
 from app.services.mstock_live import get_mstock_ltp
 from app.services.mstock_intraday_chart import get_intraday_chart_csv
+from app.config.aws_s3 import s3, S3_BUCKET
 
 logger = logging.getLogger(__name__)
 
@@ -183,11 +185,35 @@ def select_and_rank_stocks(interval="5minute"):
 
 # ==========================================================
 # BREAKOUT ENTRY (used by 5-day mode in trade_orchestrator)
-# 3 consecutive 1m closes above scan high, entry <= 0.5% above it,
+# 3 consecutive 1m closes above scan high, entry <= 1.5% above it,
 # SL = today's low so far (no SL % limit; position size scales to it)
 # ==========================================================
 WEEKLY_SUSTAIN_CANDLES = 3
-WEEKLY_MAX_EXT_PCT = 0.5
+WEEKLY_MAX_EXT_PCT = 1.5
+EOD_DATA_PREFIX = "eod_data"
+
+
+@lru_cache(maxsize=256)
+def _closes_after(sec_id, scan_date, today):
+    """Daily closes of sessions after scan_date and before today (scanner's EOD file)."""
+    try:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f"{EOD_DATA_PREFIX}/{sec_id}.csv")
+        eod = pd.read_csv(io.BytesIO(obj["Body"].read()))
+        eod.columns = eod.columns.str.lower()
+        dates = pd.to_datetime(eod["date"]).dt.date
+        return eod.loc[(dates > scan_date) & (dates < today), "close"].astype(float).tolist()
+    except Exception as e:
+        logger.warning("EOD read failed for %s: %s", sec_id, e)
+        return []
+
+
+def _signal_expired(row, today):
+    """A signal is spent once a later session closed above the entry band."""
+    scan_date = row.get("_scan_date")
+    if scan_date is None or pd.isna(scan_date):
+        return False
+    band = float(row["High"]) * (1 + WEEKLY_MAX_EXT_PCT / 100)
+    return any(c > band for c in _closes_after(str(row["Security ID"]), scan_date, today))
 
 
 def _sustained_above(closes, level, candles):
@@ -222,6 +248,13 @@ def select_weekly_breakouts(exclude=(), last_entry=None):
         for name in df.loc[used, "Stock Name"]:
             logger.info("%s → Skipped (signal already traded)", name)
         df = df[~used]
+
+    if "_scan_date" in df.columns and not df.empty:
+        today = pd.Timestamp.now().date()
+        expired = df.apply(lambda r: _signal_expired(r, today), axis=1)
+        for name in df.loc[expired, "Stock Name"]:
+            logger.info("%s → Skipped (closed above %.1f%% band after scan; move missed)", name, WEEKLY_MAX_EXT_PCT)
+        df = df[~expired]
 
     if df.empty:
         return []
