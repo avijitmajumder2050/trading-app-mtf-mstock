@@ -26,23 +26,25 @@ MAX_TRADES_PER_WEEK = 3           # None = no weekly limit; funds are the only c
 
 
 def open_stocks_and_week_entries():
-    """(stocks with an open trade, number of entries this Mon-Sun week)."""
+    """(stocks with an open trade, entries this Mon-Sun week, {stock: last entry date})."""
     df = load_trades()
 
     if df.empty or "status" not in df.columns:
-        return [], 0
+        return [], 0, {}
 
     open_stocks = df.loc[df["status"] != "CLOSED", "stock_name"].tolist()
 
     if "entry_date" not in df.columns:
-        return open_stocks, 0
+        return open_stocks, 0, {}
 
     entry_dates = pd.to_datetime(df["entry_date"], format="mixed", errors="coerce").dt.date
     today = datetime.now().date()
     week_start = today - pd.Timedelta(days=today.weekday())
     week_entries = int(((entry_dates >= week_start) & (entry_dates <= today)).sum())
 
-    return open_stocks, week_entries
+    last_entry = entry_dates.groupby(df["stock_name"]).max().dropna().to_dict()
+
+    return open_stocks, week_entries, last_entry
 
 
 # --------------------------------------------------
@@ -60,7 +62,7 @@ def run_entry_engine():
         logger.info("Entry cutoff %s passed. Skipping entry engine.", ENTRY_CUTOFF)
         return
 
-    open_stocks, week_entries = open_stocks_and_week_entries()
+    open_stocks, week_entries, last_entry = open_stocks_and_week_entries()
     slots = float("inf") if MAX_TRADES_PER_WEEK is None else MAX_TRADES_PER_WEEK - week_entries
 
     if slots <= 0:
@@ -69,8 +71,9 @@ def run_entry_engine():
 
     logger.info("Running selection engine (%s weekly slot(s) left)...", slots)
 
-    # 1️⃣ Stock selection (a stock still held is not bought again)
-    ranked = select_weekly_breakouts(exclude=set(open_stocks))
+    # 1️⃣ Stock selection: any untraded signal from this week; a stock
+    #     still held is not bought again
+    ranked = select_weekly_breakouts(exclude=set(open_stocks), last_entry=last_entry)
 
     if not ranked:
         logger.info("No weekly breakout yet. Skipping cycle.")

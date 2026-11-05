@@ -196,9 +196,14 @@ def _sustained_above(closes, level, candles):
     return len(recent) == candles + 1 and all(close > level for close in recent)
 
 
-def select_weekly_breakouts(exclude=()):
+def select_weekly_breakouts(exclude=(), last_entry=None):
+    """
+    Signals from any scan this week stay live until they trigger.
+    exclude: stocks still held. last_entry: {stock: latest entry date};
+    a signal is used up once the stock was entered on/after its scan date.
+    """
 
-    df = read_ema_momentum_from_s3()
+    df = read_ema_momentum_from_s3(whole_week=True)
 
     if df.empty:
         logger.warning("EMA file empty")
@@ -206,6 +211,17 @@ def select_weekly_breakouts(exclude=()):
 
     df.columns = df.columns.str.strip()
     df = df[~df["Stock Name"].isin(set(exclude))]
+
+    last_entry = last_entry or {}
+    if "_scan_date" in df.columns and last_entry and not df.empty:
+        used = df.apply(
+            lambda r: last_entry.get(r["Stock Name"]) is not None
+            and last_entry[r["Stock Name"]] > r["_scan_date"],
+            axis=1,
+        )
+        for name in df.loc[used, "Stock Name"]:
+            logger.info("%s → Skipped (signal already traded)", name)
+        df = df[~used]
 
     if df.empty:
         return []
