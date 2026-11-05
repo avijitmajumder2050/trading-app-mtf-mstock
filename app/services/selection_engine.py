@@ -194,26 +194,30 @@ EOD_DATA_PREFIX = "eod_data"
 
 
 @lru_cache(maxsize=256)
-def _closes_after(sec_id, scan_date, today):
-    """Daily closes of sessions after scan_date and before today (scanner's EOD file)."""
+def _highs_after(sec_id, scan_date, today):
+    """Daily highs of sessions after scan_date and before today (scanner's EOD file)."""
     try:
         obj = s3.get_object(Bucket=S3_BUCKET, Key=f"{EOD_DATA_PREFIX}/{sec_id}.csv")
         eod = pd.read_csv(io.BytesIO(obj["Body"].read()))
         eod.columns = eod.columns.str.lower()
         dates = pd.to_datetime(eod["date"]).dt.date
-        return eod.loc[(dates > scan_date) & (dates < today), "close"].astype(float).tolist()
+        return eod.loc[(dates > scan_date) & (dates < today), "high"].astype(float).tolist()
     except Exception as e:
         logger.warning("EOD read failed for %s: %s", sec_id, e)
         return []
 
 
 def _signal_expired(row, today):
-    """A signal is spent once a later session closed above the entry band."""
+    """
+    A signal is spent once any later session's high crossed the scan High:
+    the breakout happened that day (traded or not), so a pullback back into
+    the entry range on a later day must not trigger it again.
+    """
     scan_date = row.get("_scan_date")
     if scan_date is None or pd.isna(scan_date):
         return False
-    band = float(row["High"]) * (1 + WEEKLY_MAX_EXT_PCT / 100)
-    return any(c > band for c in _closes_after(str(row["Security ID"]), scan_date, today))
+    scan_high = float(row["High"])
+    return any(h > scan_high for h in _highs_after(str(row["Security ID"]), scan_date, today))
 
 
 def _sustained_above(closes, level, candles):
@@ -253,7 +257,7 @@ def select_weekly_breakouts(exclude=(), last_entry=None):
         today = pd.Timestamp.now().date()
         expired = df.apply(lambda r: _signal_expired(r, today), axis=1)
         for name in df.loc[expired, "Stock Name"]:
-            logger.info("%s → Skipped (closed above %.1f%% band after scan; move missed)", name, WEEKLY_MAX_EXT_PCT)
+            logger.info("%s → Skipped (breakout already happened on an earlier day)", name)
         df = df[~expired]
 
     if df.empty:
